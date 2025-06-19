@@ -1,0 +1,44 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="batteryGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00D4FF;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#00FF88;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FFD700;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="backgroundGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a1a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2d2d2d;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="180" fill="url(#backgroundGradient)"/>
+  
+  <!-- Car silhouette -->
+  <path d="M200 600 L300 550 L400 520 L600 520 L700 550 L824 600 L824 700 L750 700 L750 750 L650 750 L650 700 L374 700 L374 750 L274 750 L274 700 L200 700 Z" fill="#444"/>
+  
+  <!-- Battery main body -->
+  <rect x="300" y="300" width="424" height="200" rx="20" fill="url(#batteryGradient)" stroke="#fff" stroke-width="4"/>
+  
+  <!-- Battery terminal -->
+  <rect x="724" y="350" width="40" height="100" rx="10" fill="url(#batteryGradient)"/>
+  
+  <!-- Battery charge level indicator -->
+  <rect x="320" y="320" width="120" height="160" rx="10" fill="#00FF88" opacity="0.8"/>
+  <rect x="460" y="320" width="120" height="160" rx="10" fill="#00FF88" opacity="0.6"/>
+  <rect x="600" y="320" width="104" height="160" rx="10" fill="#FFD700" opacity="0.4"/>
+  
+  <!-- Lightning bolt -->
+  <path d="M450 180 L500 180 L460 240 L480 240 L430 300 L380 240 L420 240 Z" fill="#FFD700" stroke="#fff" stroke-width="2"/>
+  
+  <!-- WiFi signal indicator -->
+  <circle cx="180" cy="250" r="8" fill="#00D4FF"/>
+  <path d="M150 220 Q180 200 210 220" stroke="#00D4FF" stroke-width="4" fill="none"/>
+  <path d="M130 200 Q180 170 230 200" stroke="#00D4FF" stroke-width="4" fill="none"/>
+  <path d="M110 180 Q180 140 250 180" stroke="#00D4FF" stroke-width="4" fill="none"/>
+  
+  <!-- Monitoring waves -->
+  <path d="M800 250 Q820 230 840 250 Q860 270 880 250" stroke="#00FF88" stroke-width="3" fill="none"/>
+  <path d="M800 270 Q820 250 840 270 Q860 290 880 270" stroke="#00FF88" stroke-width="3" fill="none"/>
+  <path d="M800 290 Q820 270 840 290 Q860 310 880 290" stroke="#00FF88" stroke-width="3" fill="none"/>
+</svg>

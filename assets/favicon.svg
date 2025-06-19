@@ -1,0 +1,22 @@
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="faviconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00D4FF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FFD700;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="32" height="32" rx="6" fill="#1a1a1a"/>
+  
+  <!-- Battery -->
+  <rect x="6" y="12" width="18" height="8" rx="2" fill="url(#faviconGradient)"/>
+  <rect x="24" y="15" width="2" height="2" rx="1" fill="url(#faviconGradient)"/>
+  
+  <!-- Charge indicator -->
+  <rect x="8" y="14" width="4" height="4" rx="1" fill="#00FF88"/>
+  <rect x="13" y="14" width="4" height="4" rx="1" fill="#FFD700" opacity="0.7"/>
+  
+  <!-- Lightning -->
+  <path d="M14 4 L18 4 L16 8 L17 8 L15 12 L13 8 L14 8 Z" fill="#FFD700"/>
+</svg>
