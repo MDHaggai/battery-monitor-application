@@ -32,17 +32,34 @@ const DashboardScreen = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [esp32IP, setEsp32IP] = useState('192.168.4.1');
   const [currentSession, setCurrentSession] = useState(null);
+  
+  // Percentage stability system
+  const [stablePercentage, setStablePercentage] = useState(85);
+  const [lastPercentageUpdate, setLastPercentageUpdate] = useState(Date.now());
+  const PERCENTAGE_UPDATE_INTERVAL = 10 * 60 * 1000; // 10 minutes
 
   useEffect(() => {
     loadCurrentSession();
     fetchBatteryData();
     checkWifiConnection();
+    // Set connection to true initially if we have a session
+    if (currentSession) {
+      setIsConnected(true);
+    }
     const interval = setInterval(() => {
       fetchBatteryData();
       checkWifiConnection();
     }, 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [currentSession]);
+
+  // Set initial connection status when session is available
+  useEffect(() => {
+    if (currentSession) {
+      console.log('Session loaded, setting initial connection status to true');
+      setIsConnected(true);
+    }
+  }, [currentSession]);
 
   const loadCurrentSession = async () => {
     try {
@@ -67,37 +84,87 @@ const DashboardScreen = () => {
         const isConnectedToTargetNetwork = currentSSID && 
           currentSSID.replace(/"/g, '') === currentSession.ssid;
         
-        if (!isConnectedToTargetNetwork) {
-          setIsConnected(false);
-        }
+        console.log('WiFi check:', {
+          currentSSID: currentSSID,
+          targetSSID: currentSession.ssid,
+          isConnected: isConnectedToTargetNetwork
+        });
+        
+        setIsConnected(isConnectedToTargetNetwork);
+      } else {
+        setIsConnected(false);
       }
     } catch (error) {
       console.log('WiFi check error:', error);
+      setIsConnected(false);
     }
+  };
+
+  // Calculate percentage from voltage but ensure it's never 0
+  const calculateSafePercentage = (voltage) => {
+    if (!voltage || voltage <= 0) return stablePercentage; // Keep current if invalid reading
+    
+    // Lead-acid battery voltage to percentage mapping
+    const MIN_VOLTAGE = 10.8; // 5% minimum
+    const MAX_VOLTAGE = 12.8; // 100% maximum
+    
+    // Clamp voltage to realistic range
+    const clampedVoltage = Math.max(MIN_VOLTAGE, Math.min(MAX_VOLTAGE, voltage));
+    
+    // Calculate percentage with proper scaling
+    let percentage = ((clampedVoltage - MIN_VOLTAGE) / (MAX_VOLTAGE - MIN_VOLTAGE)) * 95 + 5;
+    
+    // Round and ensure minimum 5%
+    percentage = Math.max(5, Math.round(percentage));
+    
+    return percentage;
+  };
+
+  // Check if it's time to update percentage
+  const shouldUpdatePercentage = () => {
+    const now = Date.now();
+    return (now - lastPercentageUpdate) >= PERCENTAGE_UPDATE_INTERVAL;
   };
 
   const fetchBatteryData = async () => {
     try {
+      console.log(`Attempting to fetch data from ESP32 at: http://${esp32IP}/`);
       const response = await fetch(`http://${esp32IP}/`, {
         timeout: 5000,
       });
       
       if (response.ok) {
         const data = await response.json();
+        console.log('ESP32 data received:', data);
+        
+        // Calculate new percentage from voltage
+        const newPercentage = calculateSafePercentage(data.voltage);
+        
+        // Only update percentage if 10 minutes have passed
+        let displayPercentage = stablePercentage;
+        if (shouldUpdatePercentage()) {
+          displayPercentage = newPercentage;
+          setStablePercentage(newPercentage);
+          setLastPercentageUpdate(Date.now());
+          console.log(`Percentage updated after 10 minutes: ${newPercentage}% (from ${data.voltage}V)`);
+        }
+        
         setBatteryData({
           voltage: data.voltage || 0,
           current1: data.current1 || 0,
           current2: data.current2 || 0,
-          percentage: data.percentage || 0,
+          percentage: displayPercentage, // Use stable percentage
           temperature: data.temperature || 24,
           status: getStatusFromVoltage(data.voltage),
         });
         setIsConnected(true);
+        console.log('ESP32 connection successful - status updated to connected');
       } else {
+        console.log('ESP32 response not OK:', response.status);
         setIsConnected(false);
       }
     } catch (error) {
-      console.log('Connection error:', error);
+      console.log('ESP32 connection error:', error.message);
       setIsConnected(false);
       // Use mock data for demo
       setBatteryData(prev => ({
@@ -105,6 +172,7 @@ const DashboardScreen = () => {
         voltage: 12.6 + (Math.random() - 0.5) * 0.2,
         current1: 2.3 + (Math.random() - 0.5) * 0.5,
         current2: 1.8 + (Math.random() - 0.5) * 0.3,
+        percentage: stablePercentage, // Keep percentage stable even in mock mode
       }));
     }
   };

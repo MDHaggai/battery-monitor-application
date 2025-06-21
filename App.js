@@ -10,6 +10,7 @@ import DashboardScreen from './src/screens/DashboardScreen';
 import ControlScreen from './src/screens/ControlScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import MonitoringScreen from './src/screens/MonitoringScreen';
+import DocumentsScreen from './src/screens/DocumentsScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -28,6 +29,8 @@ function MainTabNavigator() {
             emoji = '🎛️';
           } else if (route.name === 'Monitor') {
             emoji = '📊';
+          } else if (route.name === 'Documents') {
+            emoji = '📄';
           } else if (route.name === 'Settings') {
             emoji = '⚙️';
           }
@@ -56,6 +59,10 @@ function MainTabNavigator() {
       <Tab.Screen 
         name="Monitor" 
         component={MonitoringScreen}
+      />
+      <Tab.Screen 
+        name="Documents" 
+        component={DocumentsScreen}
       />
       <Tab.Screen 
         name="Settings" 

@@ -29,10 +29,16 @@
         "android.permission.CHANGE_WIFI_STATE",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION"
-      ]
+      ],
+      "package": "com.mdhaggai.batterymonitorapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "3b279975-bf71-49c5-aa37-826cd6310a9a"
+      }
     }
   }
 }

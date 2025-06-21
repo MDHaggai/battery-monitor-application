@@ -8,7 +8,7 @@ import {
   FlatList,
   Alert,
   ActivityIndicator,
-  Platform,
+  Platform, 
   PermissionsAndroid,
   TextInput,
   Modal,
@@ -24,6 +24,7 @@ const CarSelectionScreen = ({ navigation }) => {
   const [availableNetworks, setAvailableNetworks] = useState([]);
   const [isScanning, setIsScanning] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
 
   useEffect(() => {
     loadRegisteredCars();
@@ -97,19 +98,29 @@ const CarSelectionScreen = ({ navigation }) => {
         // Filter and format the networks
         const formattedNetworks = networks
           .filter(network => network.SSID && network.SSID.trim() !== '')
-          .map((network, index) => ({
-            id: index,
-            ssid: network.SSID,
-            signal: network.level || -70,
-            secured: network.capabilities && network.capabilities.includes('WPA'),
-            esp32: network.SSID.toLowerCase().includes('battery') || 
-                   network.SSID.toLowerCase().includes('esp32') ||
-                   network.SSID.toLowerCase().includes('monitor') ||
-                   network.SSID === 'BatteryMonitorAP'
-          }))
+          .map((network, index) => {
+            const isEsp32 = network.SSID.toLowerCase().includes('battery') || 
+                           network.SSID.toLowerCase().includes('esp32') ||
+                           network.SSID.toLowerCase().includes('monitor') ||
+                           network.SSID === 'BatteryMonitorAP';
+            const isSecured = network.capabilities && (
+              network.capabilities.includes('WPA') || 
+              network.capabilities.includes('WEP') ||
+              network.capabilities.includes('PSK')
+            );
+            
+            return {
+              id: index,
+              ssid: network.SSID,
+              signal: network.level || -70,
+              secured: isSecured,
+              esp32: isEsp32
+            };
+          })
           .sort((a, b) => b.signal - a.signal); // Sort by signal strength
 
         setAvailableNetworks(formattedNetworks);
+        console.log('Formatted networks:', formattedNetworks);
       } else {
         throw new Error('No networks found');
       }
@@ -133,21 +144,27 @@ const CarSelectionScreen = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
 
+  // Debug log for modal state changes
+  useEffect(() => {
+    console.log('showPasswordModal state changed:', showPasswordModal);
+    console.log('selectedNetwork:', selectedNetwork);
+  }, [showPasswordModal, selectedNetwork]);
+
   const connectToNetwork = async (network) => {
+    console.log('connectToNetwork called with:', network);
+    
     if (!network.esp32) {
+      console.log('Network is not ESP32, showing alert');
       Alert.alert('Invalid Network', 'Please select an ESP32 battery monitor network.');
       return;
     }
 
-    if (network.secured) {
-      // Show password input modal for secured networks
-      setSelectedNetwork(network);
-      setPassword('');
-      setShowPasswordModal(true);
-    } else {
-      // Connect directly to open networks
-      await performWifiConnection(network, '');
-    }
+    console.log('ESP32 network detected, showing password modal');
+    // Always show password input for ESP32 networks
+    setSelectedNetwork(network);
+    setPassword(''); // Start with empty password for manual entry
+    setShowPasswordModal(true);
+    console.log('Password modal should be visible now');
   };
 
   const performWifiConnection = async (network, password) => {
@@ -155,18 +172,24 @@ const CarSelectionScreen = ({ navigation }) => {
     setShowPasswordModal(false);
     
     try {
+      // For ESP32 networks, always use the provided password
+      const connectionPassword = password || (network.ssid === 'BatteryMonitorAP' ? '12345678' : '');
+      
+      console.log('Attempting to connect to:', network.ssid, 'with password:', connectionPassword);
+      
       // Attempt to connect to the WiFi network
-      if (network.secured && password) {
-        await WifiManager.connectToProtectedSSID(network.ssid, password, false);
-      } else if (!network.secured) {
-        await WifiManager.connectToProtectedSSID(network.ssid, '', false);
-      }
+      // The react-native-wifi-reborn method signature expects 4 parameters:
+      // connectToProtectedSSID(ssid, password, isWEP, isHidden)
+      await WifiManager.connectToProtectedSSID(network.ssid, connectionPassword, false, false);
 
+      console.log('WiFi connection attempt completed, waiting for connection...');
+      
       // Wait a bit for connection to establish
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await new Promise(resolve => setTimeout(resolve, 5000));
 
       // Check if connected
       const currentSSID = await WifiManager.getCurrentWifiSSID();
+      console.log('Current connected SSID:', currentSSID);
       
       if (currentSSID && currentSSID.replace(/"/g, '') === network.ssid) {
         // Successfully connected
@@ -176,7 +199,7 @@ const CarSelectionScreen = ({ navigation }) => {
           ssid: network.ssid,
           registeredAt: new Date().toISOString(),
           lastConnected: new Date().toISOString(),
-          password: network.secured ? password : '',
+          password: connectionPassword,
         };
 
         await saveRegisteredCar(newCar);
@@ -207,14 +230,14 @@ const CarSelectionScreen = ({ navigation }) => {
           ]
         );
       } else {
-        throw new Error('Connection failed');
+        throw new Error('Connection failed - could not verify connection');
       }
     } catch (error) {
       setIsConnecting(false);
       console.log('Connection error:', error);
       Alert.alert(
         'Connection Failed',
-        'Unable to connect to the network. Please check the password and try again.',
+        `Unable to connect to ${network.ssid}. Please check the password and try again.\n\nFor BatteryMonitorAP, the default password is: 12345678`,
         [
           { text: 'Try Again', onPress: () => connectToNetwork(network) },
           { text: 'Cancel' }
@@ -230,32 +253,112 @@ const CarSelectionScreen = ({ navigation }) => {
       [
         { text: 'Cancel', style: 'cancel' },
         {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteCar(car),
+        },
+        {
           text: 'Connect',
           onPress: async () => {
-            // Update last connected time
-            const updatedCars = registeredCars.map(c => 
-              c.id === car.id ? { ...c, lastConnected: new Date().toISOString() } : c
-            );
-            setRegisteredCars(updatedCars);
-            await AsyncStorage.setItem('registeredCars', JSON.stringify(updatedCars));
-            
-            // Store the current session
-            const sessionData = {
-              carId: car.id,
-              carName: car.name,
-              ssid: car.ssid,
-              esp32IP: '192.168.4.1', // ESP32 AP default IP
-              connectedAt: new Date().toISOString()
-            };
-            
-            await AsyncStorage.setItem('currentSession', JSON.stringify(sessionData));
-            console.log('Stored selected car session:', sessionData);
-            
-            navigation.navigate('Main');
+            await connectToSavedCar(car);
           },
         },
       ]
     );
+  };
+
+  const deleteCar = async (carToDelete) => {
+    Alert.alert(
+      'Delete Car',
+      `Are you sure you want to delete ${carToDelete.name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const updatedCars = registeredCars.filter(c => c.id !== carToDelete.id);
+              await AsyncStorage.setItem('registeredCars', JSON.stringify(updatedCars));
+              setRegisteredCars(updatedCars);
+              
+              // Clear current session if deleting the active car
+              const sessionData = await AsyncStorage.getItem('currentSession');
+              if (sessionData) {
+                const session = JSON.parse(sessionData);
+                if (session.carId === carToDelete.id) {
+                  await AsyncStorage.removeItem('currentSession');
+                }
+              }
+              
+              Alert.alert('Success', `${carToDelete.name} has been deleted.`);
+            } catch (error) {
+              console.log('Error deleting car:', error);
+              Alert.alert('Error', 'Failed to delete car.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const connectToSavedCar = async (car) => {
+    try {
+      // Check if we have a saved password
+      if (!car.password) {
+        Alert.alert('Password Required', 'This car was saved without a password. Please re-add it with the correct password.');
+        return;
+      }
+
+      console.log(`Attempting to connect to saved car: ${car.name} (${car.ssid})`);
+      
+      // Try to connect using saved password
+      await WifiManager.connectToProtectedSSID(car.ssid, car.password, false, false);
+      
+      // Wait for connection
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      // Verify connection
+      const currentSSID = await WifiManager.getCurrentWifiSSID();
+      console.log('Current connected SSID:', currentSSID);
+      
+      if (currentSSID && currentSSID.replace(/"/g, '') === car.ssid) {
+        // Update last connected time
+        const updatedCars = registeredCars.map(c => 
+          c.id === car.id ? { ...c, lastConnected: new Date().toISOString() } : c
+        );
+        setRegisteredCars(updatedCars);
+        await AsyncStorage.setItem('registeredCars', JSON.stringify(updatedCars));
+        
+        // Store the current session
+        const sessionData = {
+          carId: car.id,
+          carName: car.name,
+          ssid: car.ssid,
+          esp32IP: '192.168.4.1',
+          connectedAt: new Date().toISOString()
+        };
+        
+        await AsyncStorage.setItem('currentSession', JSON.stringify(sessionData));
+        console.log('Connected to saved car:', sessionData);
+        
+        Alert.alert('Connected!', `Successfully connected to ${car.name}`, [
+          { text: 'Go to Dashboard', onPress: () => navigation.navigate('Main') }
+        ]);
+      } else {
+        throw new Error('Connection verification failed');
+      }
+    } catch (error) {
+      console.log('Error connecting to saved car:', error);
+      Alert.alert(
+        'Connection Failed',
+        `Unable to connect to ${car.name}. The saved password might be incorrect or the network is unavailable.`,
+        [
+          { text: 'Try Manual Connection', onPress: () => scanForNetworks() },
+          { text: 'OK' }
+        ]
+      );
+    }
   };
 
   const getSignalIcon = (signal) => {
@@ -279,7 +382,10 @@ const CarSelectionScreen = ({ navigation }) => {
           styles.networkItem,
           item.esp32 && styles.esp32Network
         ]}
-        onPress={() => connectToNetwork(item)}
+        onPress={() => {
+          console.log('Network item pressed:', item);
+          connectToNetwork(item);
+        }}
         disabled={isConnecting}
       >
         <LinearGradient
@@ -292,7 +398,10 @@ const CarSelectionScreen = ({ navigation }) => {
                 {item.ssid}
               </Text>
               {item.esp32 && (
-                <Text style={styles.esp32Label}>🔋 Battery Monitor</Text>
+                <Text style={styles.esp32Label}>
+                  🔋 Battery Monitor
+                  {item.ssid === 'BatteryMonitorAP' && <Text style={styles.passwordRequired}> • Password Required</Text>}
+                </Text>
               )}
             </View>
             <View style={styles.networkDetails}>
@@ -388,6 +497,72 @@ const CarSelectionScreen = ({ navigation }) => {
               <Text style={styles.connectingSubtext}>This may take a few seconds</Text>
             </Animatable.View>
           )}
+          
+          {/* Password Input Modal - Available in WiFi List */}
+          <Modal
+            visible={showPasswordModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => {
+              console.log('Modal onRequestClose called');
+              setShowPasswordModal(false);
+            }}
+          >
+            <View style={styles.modalOverlay}>
+              <Animatable.View animation="slideInUp" style={styles.passwordModal}>
+                <Text style={styles.modalTitle}>Enter WiFi Password</Text>
+                <Text style={styles.modalSubtitle}>
+                  Network: {selectedNetwork?.ssid}
+                  {selectedNetwork?.ssid === 'BatteryMonitorAP' && (
+                    <Text style={styles.defaultPasswordHint}>{'\n'}Default password: 12345678</Text>
+                  )}
+                </Text>
+                
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="Enter password"
+                  placeholderTextColor="#666"
+                  value={password}
+                  onChangeText={(text) => {
+                    console.log('Password changed:', text);
+                    setPassword(text);
+                  }}
+                  secureTextEntry={true}
+                  autoFocus={true}
+                />
+                
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.cancelButton]}
+                    onPress={() => {
+                      console.log('Cancel button pressed');
+                      setShowPasswordModal(false);
+                    }}
+                  >
+                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.connectButton]}
+                    onPress={() => {
+                      console.log('Connect button pressed with password:', password);
+                      performWifiConnection(selectedNetwork, password);
+                    }}
+                    disabled={!password.trim() && selectedNetwork?.ssid !== 'BatteryMonitorAP'}
+                  >
+                    <LinearGradient
+                      colors={(password.trim() || selectedNetwork?.ssid === 'BatteryMonitorAP') ? ['#00D4FF', '#0099CC'] : ['#666', '#555']}
+                      style={styles.connectButtonGradient}
+                    >
+                      <Text style={styles.connectButtonText}>Connect</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </Animatable.View>
+            </View>
+          </Modal>
+          
+
         </LinearGradient>
       </View>
     );
@@ -459,55 +634,43 @@ const CarSelectionScreen = ({ navigation }) => {
               </View>
             </View>
           </Animatable.View>
-        </ScrollView>
-      </LinearGradient>
-      
-      {/* Password Input Modal */}
-      <Modal
-        visible={showPasswordModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowPasswordModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <Animatable.View animation="slideInUp" style={styles.passwordModal}>
-            <Text style={styles.modalTitle}>Enter WiFi Password</Text>
-            <Text style={styles.modalSubtitle}>Network: {selectedNetwork?.ssid}</Text>
-            
-            <TextInput
-              style={styles.passwordInput}
-              placeholder="Enter password"
-              placeholderTextColor="#666"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={true}
-              autoFocus={true}
-            />
-            
-            <View style={styles.modalButtons}>
+
+          {/* Demo Mode Toggle for Preview */}
+          <Animatable.View animation="fadeInUp" duration={1000} delay={800}>
+            <View style={styles.demoSection}>
+              <Text style={styles.demoTitle}>🎭 Preview Mode</Text>
               <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => setShowPasswordModal(false)}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={[styles.modalButton, styles.connectButton]}
-                onPress={() => performWifiConnection(selectedNetwork, password)}
-                disabled={!password.trim()}
+                style={styles.demoButton}
+                onPress={() => {
+                  setDemoMode(true);
+                  const demoSession = {
+                    carId: 'demo-123',
+                    carName: 'Demo Car (BatteryMonitorAP)',
+                    ssid: 'BatteryMonitorAP',
+                    esp32IP: '192.168.4.1',
+                    connectedAt: new Date().toISOString()
+                  };
+                  AsyncStorage.setItem('currentSession', JSON.stringify(demoSession));
+                  Alert.alert('Demo Mode', 'Demo session created! You can now explore the dashboard.', [
+                    { text: 'Go to Dashboard', onPress: () => navigation.navigate('Main') }
+                  ]);
+                }}
               >
                 <LinearGradient
-                  colors={password.trim() ? ['#00D4FF', '#0099CC'] : ['#666', '#555']}
-                  style={styles.connectButtonGradient}
+                  colors={['#9966FF', '#7744CC']}
+                  style={styles.demoGradient}
                 >
-                  <Text style={styles.connectButtonText}>Connect</Text>
+                  <Text style={styles.demoIcon}>🎭</Text>
+                  <Text style={styles.demoText}>Try Demo Mode</Text>
                 </LinearGradient>
               </TouchableOpacity>
+              <Text style={styles.demoDescription}>
+                Perfect for preview builds - explore all features with mock data
+              </Text>
             </View>
           </Animatable.View>
-        </View>
-      </Modal>
+        </ScrollView>
+      </LinearGradient>
     </View>
   );
 };
@@ -665,6 +828,10 @@ const styles = StyleSheet.create({
     color: '#00FF88',
     fontWeight: '500',
   },
+  passwordRequired: {
+    color: '#FFD700',
+    fontSize: 10,
+  },
   networkDetails: {
     alignItems: 'flex-end',
   },
@@ -752,6 +919,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    zIndex: 1001,
   },
   passwordModal: {
     backgroundColor: '#1a1a1a',
@@ -774,6 +942,11 @@ const styles = StyleSheet.create({
     color: '#888',
     textAlign: 'center',
     marginBottom: 20,
+  },
+  defaultPasswordHint: {
+    fontSize: 12,
+    color: '#00D4FF',
+    fontWeight: '600',
   },
   passwordInput: {
     backgroundColor: '#2d2d2d',
@@ -818,6 +991,48 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  demoSection: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 30,
+    borderWidth: 1,
+    borderColor: '#9966FF',
+  },
+  demoTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#9966FF',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  demoButton: {
+    marginBottom: 10,
+    borderRadius: 15,
+    overflow: 'hidden',
+  },
+  demoGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+  },
+  demoIcon: {
+    fontSize: 24,
+    marginRight: 10,
+  },
+  demoText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  demoDescription: {
+    fontSize: 12,
+    color: '#888',
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 });
 

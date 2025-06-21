@@ -58,7 +58,7 @@ const ControlScreen = () => {
       name: 'Headlamp',
       icon: '💡',
       color: '#FFD700',
-      pin: 0,
+      pin: 0, // Index 0 -> GPIO4 (Headlamp)
       description: 'Front headlights'
     },
     {
@@ -66,7 +66,7 @@ const ControlScreen = () => {
       name: 'Car Light',
       icon: '🚗',
       color: '#00D4FF',
-      pin: 1,
+      pin: 1, // Index 1 -> GPIO0 (Car Light)
       description: 'Main car lighting'
     },
     {
@@ -74,7 +74,7 @@ const ControlScreen = () => {
       name: 'Trafficator',
       icon: '🔄',
       color: '#FF8C00',
-      pin: 2,
+      pin: 2, // Index 2 -> GPIO2 (Trafficator)
       description: 'Turn signals'
     },
     {
@@ -82,7 +82,7 @@ const ControlScreen = () => {
       name: 'Rear Light',
       icon: '🚙',
       color: '#FF4444',
-      pin: 3,
+      pin: 3, // Index 3 -> GPIO14 (Rear Light 1)
       description: 'Rear brake lights'
     },
     {
@@ -90,7 +90,7 @@ const ControlScreen = () => {
       name: 'Extra Light 1',
       icon: '🔦',
       color: '#00FF88',
-      pin: 4,
+      pin: 4, // Index 4 -> GPIO12 (Rear Light 2)
       description: 'Additional lighting'
     },
     {
@@ -98,7 +98,7 @@ const ControlScreen = () => {
       name: 'Extra Light 2',
       icon: '🔦',
       color: '#9966FF',
-      pin: 5,
+      pin: 5, // Index 5 -> GPIO13 (Unused)
       description: 'Additional lighting'
     },
   ];
@@ -106,39 +106,90 @@ const ControlScreen = () => {
   const toggleLED = async (ledId, pin, currentState) => {
     try {
       const newState = !currentState;
-      const response = await fetch(
-        `http://${esp32IP}/led?pin=${pin}&state=${newState ? 1 : 0}`,
-        { method: 'GET', timeout: 3000 }
-      );
+      const url = `http://${esp32IP}/led?pin=${pin}&state=${newState ? 1 : 0}`;
+      
+      console.log(`Sending LED control request: ${url}`);
+      
+      const response = await fetch(url, { 
+        method: 'GET', 
+        timeout: 5000,
+        headers: {
+          'Cache-Control': 'no-cache',
+        }
+      });
 
+      console.log(`Response status: ${response.status}`);
+      
       if (response.ok) {
+        const responseText = await response.text();
+        console.log(`ESP32 response: ${responseText}`);
+        
         setLedStates(prev => ({
           ...prev,
           [ledId]: newState
         }));
-        console.log(`LED ${ledId} turned ${newState ? 'ON' : 'OFF'}`);
+        
+        console.log(`LED ${ledId} (pin index ${pin}) turned ${newState ? 'ON' : 'OFF'}`);
+        Alert.alert('Success', `${ledControls[pin]?.name || 'LED'} turned ${newState ? 'ON' : 'OFF'}`);
       } else {
-        Alert.alert('Error', 'Failed to control LED');
+        const errorText = await response.text();
+        console.log(`ESP32 error response: ${errorText}`);
+        Alert.alert('Error', `Failed to control LED: ${errorText}`);
       }
     } catch (error) {
       console.log('LED control error:', error);
-      // For demo purposes, toggle the state anyway
-      setLedStates(prev => ({
-        ...prev,
-        [ledId]: !currentState
-      }));
+      Alert.alert('Connection Error', `Unable to connect to ESP32. Make sure you're connected to the BatteryMonitorAP network.\n\nError: ${error.message}`);
+      
+      // For demo purposes, don't toggle the state if there's a connection error
+      // setLedStates(prev => ({
+      //   ...prev,
+      //   [ledId]: !currentState
+      // }));
     }
   };
 
   const toggleAllLights = async (turnOn) => {
-    const promises = ledControls.map(led => 
-      toggleLED(led.id, led.pin, !turnOn)
-    );
-    
     try {
-      await Promise.all(promises);
+      console.log(`Turning all lights ${turnOn ? 'ON' : 'OFF'}`);
+      
+      // Send requests sequentially to avoid overwhelming the ESP32
+      for (const led of ledControls) {
+        try {
+          const url = `http://${esp32IP}/led?pin=${led.pin}&state=${turnOn ? 1 : 0}`;
+          console.log(`Sending: ${url}`);
+          
+          const response = await fetch(url, { 
+            method: 'GET', 
+            timeout: 3000,
+            headers: {
+              'Cache-Control': 'no-cache',
+            }
+          });
+          
+          if (response.ok) {
+            const responseText = await response.text();
+            console.log(`${led.name} response: ${responseText}`);
+            
+            // Update state for this LED
+            setLedStates(prev => ({
+              ...prev,
+              [led.id]: turnOn
+            }));
+          } else {
+            console.log(`Failed to control ${led.name}`);
+          }
+          
+          // Small delay between requests
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+        } catch (ledError) {
+          console.log(`Error controlling ${led.name}:`, ledError);
+        }
+      }
+      
       Alert.alert('Success', `All lights turned ${turnOn ? 'ON' : 'OFF'}`);
     } catch (error) {
+      console.log('Toggle all lights error:', error);
       Alert.alert('Error', 'Failed to control some lights');
     }
   };
